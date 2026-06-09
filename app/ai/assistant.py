@@ -8,65 +8,63 @@ _client = AsyncOpenAI(api_key=settings.openai_api_key)
 OPERATOR_TOOLS = [
     {
         "type": "function",
-        "function": {
-            "name": "transfer_to_operator",
-            "description": (
-                "Вызвать эту функцию, когда вопрос пользователя выходит за рамки "
-                "компетенции ассистента и требует участия живого оператора."
-            ),
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
+        "name": "transfer_to_operator",
+        "description": (
+            "Вызвать эту функцию, когда вопрос пользователя выходит за рамки "
+            "компетенции ассистента и требует участия живого оператора."
+        ),
+        "parameters": {"type": "object", "properties": {}, "required": []},
     }
 ]
 
 
 async def call_assistant(
-    thread_id: str | None,
+    last_response_id: str | None,
     texts: list[str],
     image_urls: list[str],
-) -> tuple[str | None, bool, str]:
+) -> tuple[str | None, bool, str | None]:
     """
-    Отправляет сообщение в OpenAI Assistant и возвращает:
-      (response_text, needs_operator, thread_id)
+    Отправляет сообщение через OpenAI Responses API и возвращает:
+      (response_text, needs_operator, new_last_response_id)
 
     Если needs_operator=True — response_text будет None.
     Бросает исключение при любой сетевой или API ошибке.
     """
-    # Создаём или переиспользуем Thread
-    if thread_id is None:
-        thread = await _client.beta.threads.create()
-        thread_id = thread.id
+    combined_text = "\n".join(texts) if texts else ""
 
     # Формируем content: текст + изображения
-    combined_text = "\n".join(texts) if texts else ""
-    content: list[dict] = [{"type": "text", "text": combined_text}]
+    content: list[dict] = [{"type": "input_text", "text": combined_text}]
     for url in image_urls:
-        content.append({"type": "image_url", "image_url": {"url": url}})
+        content.append({"type": "input_image", "image_url": url})
 
-    await _client.beta.threads.messages.create(
-        thread_id=thread_id,
-        role="user",
-        content=content,
-    )
+    # Параметры запроса
+    params: dict = {
+        "model": settings.openai_model,
+        "input": content,
+        "tools": OPERATOR_TOOLS,
+    }
 
-    run = await _client.beta.threads.runs.create_and_poll(
-        thread_id=thread_id,
-        assistant_id=settings.openai_assistant_id,
-        tools=OPERATOR_TOOLS,
-        timeout=settings.openai_run_timeout,
-    )
+    # Системный промпт — только при первом обращении (нет previous_response_id)
+    if last_response_id is None and settings.openai_instructions:
+        params["instructions"] = settings.openai_instructions
 
-    # Ассистент вызвал transfer_to_operator
-    if run.status == "requires_action":
-        tool_calls = run.required_action.submit_tool_outputs.tool_calls
-        if any(tc.function.name == "transfer_to_operator" for tc in tool_calls):
-            return None, True, thread_id
+    # Продолжение существующего диалога
+    if last_response_id is not None:
+        params["previous_response_id"] = last_response_id
 
-    # Успешный ответ
-    if run.status == "completed":
-        messages = await _client.beta.threads.messages.list(thread_id=thread_id)
-        raw_text = messages.data[0].content[0].text.value
-        return raw_text, False, thread_id
+    response = await _client.responses.create(**params)
 
-    # Все остальные статусы (failed, expired, cancelled, тайм-аут)
-    return None, True, thread_id
+    new_last_response_id = response.id
+
+    # Проверяем, вызвал ли ассистент transfer_to_operator
+    for item in response.output:
+        if getattr(item, "type", None) == "function_tool_call":
+            if getattr(item, "name", None) == "transfer_to_operator":
+                return None, True, new_last_response_id
+
+    # Получаем текстовый ответ
+    if response.status == "completed":
+        return response.output_text, False, new_last_response_id
+
+    # Все остальные статусы (failed, incomplete и т.д.)
+    return None, True, new_last_response_id

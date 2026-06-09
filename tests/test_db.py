@@ -6,7 +6,7 @@ import pytest_asyncio
 
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test")
 os.environ.setdefault("OPENAI_API_KEY", "test")
-os.environ.setdefault("OPENAI_ASSISTANT_ID", "test")
+os.environ.setdefault("OPENAI_MODEL", "gpt-4o")
 os.environ.setdefault("OPERATOR_CHAT_ID", "0")
 os.environ.setdefault("OPERATOR_NAME", "test")
 os.environ.setdefault("DATABASE_PATH", "/tmp/test_chatbot.db")
@@ -39,7 +39,7 @@ async def test_upsert_and_get():
     assert record.first_name == "Иван"
     assert record.texts == ["привет"]
     assert record.image_ids == ["file1"]
-    assert record.thread_id is None
+    assert record.last_response_id is None
 
 
 @pytest.mark.asyncio
@@ -54,22 +54,22 @@ async def test_upsert_appends():
 
 
 @pytest.mark.asyncio
-async def test_save_thread_id():
+async def test_save_last_response_id():
     now = int(time.time())
     await db.upsert_user("3", "X", "Y", [], [], now)
-    await db.save_thread_id("3", "thread_abc")
+    await db.save_last_response_id("3", "resp_abc123")
     record = await db.get_user("3")
-    assert record.thread_id == "thread_abc"
+    assert record.last_response_id == "resp_abc123"
 
 
 @pytest.mark.asyncio
-async def test_clear_buffer_keeps_thread():
+async def test_clear_buffer_keeps_response_id():
     now = int(time.time())
     await db.upsert_user("4", "A", "B", ["msg"], ["img"], now)
-    await db.save_thread_id("4", "thread_xyz")
+    await db.save_last_response_id("4", "resp_xyz")
     await db.clear_buffer("4")
     record = await db.get_user("4")
     assert record.texts == []
     assert record.image_ids == []
     assert record.last_update == 0
-    assert record.thread_id == "thread_xyz"
+    assert record.last_response_id == "resp_xyz"

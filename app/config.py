@@ -9,7 +9,8 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str
-    openai_assistant_id: str
+    openai_model: str = "gpt-4o"
+    openai_instructions: str = ""  # системный промпт ассистента
 
     # Оператор
     operator_chat_id: str

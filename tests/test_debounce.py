@@ -6,7 +6,7 @@ import pytest
 
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test")
 os.environ.setdefault("OPENAI_API_KEY", "test")
-os.environ.setdefault("OPENAI_ASSISTANT_ID", "test")
+os.environ.setdefault("OPENAI_MODEL", "gpt-4o")
 os.environ.setdefault("OPERATOR_CHAT_ID", "0")
 os.environ.setdefault("OPERATOR_NAME", "test")
 os.environ.setdefault("DATABASE_PATH", "/tmp/test.db")

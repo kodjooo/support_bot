@@ -5,7 +5,7 @@ import pytest
 
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test")
 os.environ.setdefault("OPENAI_API_KEY", "test")
-os.environ.setdefault("OPENAI_ASSISTANT_ID", "asst_test")
+os.environ.setdefault("OPENAI_MODEL", "gpt-4o")
 os.environ.setdefault("OPERATOR_CHAT_ID", "0")
 os.environ.setdefault("OPERATOR_NAME", "test")
 os.environ.setdefault("DATABASE_PATH", "/tmp/test.db")
@@ -13,47 +13,46 @@ os.environ.setdefault("DATABASE_PATH", "/tmp/test.db")
 from app.ai.assistant import call_assistant
 
 
-def _make_run(status: str, tool_name: str | None = None):
-    run = MagicMock()
-    run.status = status
+def _make_response(status: str, output_text: str = "", tool_name: str | None = None):
+    """Создаёт мок-объект Response API."""
+    resp = MagicMock()
+    resp.id = "resp_test123"
+    resp.status = status
+    resp.output_text = output_text
+
+    output_items = []
     if tool_name:
-        tc = MagicMock()
-        tc.function.name = tool_name
-        run.required_action.submit_tool_outputs.tool_calls = [tc]
-    return run
+        item = MagicMock()
+        item.type = "function_tool_call"
+        item.name = tool_name
+        output_items.append(item)
+    else:
+        item = MagicMock()
+        item.type = "message"
+        output_items.append(item)
 
-
-def _make_messages(text: str):
-    msg = MagicMock()
-    msg.data[0].content[0].text.value = text
-    return msg
+    resp.output = output_items
+    return resp
 
 
 @pytest.mark.asyncio
 async def test_completed_returns_text():
-    run = _make_run("completed")
+    resp = _make_response("completed", output_text="Привет!")
     with patch("app.ai.assistant._client") as mock_client:
-        mock_client.beta.threads.create = AsyncMock(return_value=MagicMock(id="thread_new"))
-        mock_client.beta.threads.messages.create = AsyncMock()
-        mock_client.beta.threads.runs.create_and_poll = AsyncMock(return_value=run)
-        mock_client.beta.threads.messages.list = AsyncMock(return_value=_make_messages("Привет!"))
-
-        text, needs_op, tid = await call_assistant(None, ["вопрос"], [])
+        mock_client.responses.create = AsyncMock(return_value=resp)
+        text, needs_op, rid = await call_assistant(None, ["вопрос"], [])
 
     assert text == "Привет!"
     assert needs_op is False
-    assert tid == "thread_new"
+    assert rid == "resp_test123"
 
 
 @pytest.mark.asyncio
-async def test_requires_action_transfer():
-    run = _make_run("requires_action", tool_name="transfer_to_operator")
+async def test_transfer_to_operator_via_function_call():
+    resp = _make_response("completed", tool_name="transfer_to_operator")
     with patch("app.ai.assistant._client") as mock_client:
-        mock_client.beta.threads.create = AsyncMock(return_value=MagicMock(id="thread_x"))
-        mock_client.beta.threads.messages.create = AsyncMock()
-        mock_client.beta.threads.runs.create_and_poll = AsyncMock(return_value=run)
-
-        text, needs_op, tid = await call_assistant(None, ["вопрос"], [])
+        mock_client.responses.create = AsyncMock(return_value=resp)
+        text, needs_op, rid = await call_assistant(None, ["вопрос"], [])
 
     assert needs_op is True
     assert text is None
@@ -61,28 +60,44 @@ async def test_requires_action_transfer():
 
 @pytest.mark.asyncio
 async def test_failed_status_transfers():
-    run = _make_run("failed")
+    resp = _make_response("failed")
     with patch("app.ai.assistant._client") as mock_client:
-        mock_client.beta.threads.create = AsyncMock(return_value=MagicMock(id="thread_y"))
-        mock_client.beta.threads.messages.create = AsyncMock()
-        mock_client.beta.threads.runs.create_and_poll = AsyncMock(return_value=run)
-
-        text, needs_op, tid = await call_assistant(None, [], [])
+        mock_client.responses.create = AsyncMock(return_value=resp)
+        text, needs_op, rid = await call_assistant(None, [], [])
 
     assert needs_op is True
 
 
 @pytest.mark.asyncio
-async def test_existing_thread_reused():
-    run = _make_run("completed")
+async def test_previous_response_id_passed():
+    resp = _make_response("completed", output_text="ок")
     with patch("app.ai.assistant._client") as mock_client:
-        mock_client.beta.threads.create = AsyncMock()
-        mock_client.beta.threads.messages.create = AsyncMock()
-        mock_client.beta.threads.runs.create_and_poll = AsyncMock(return_value=run)
-        mock_client.beta.threads.messages.list = AsyncMock(return_value=_make_messages("ок"))
+        mock_client.responses.create = AsyncMock(return_value=resp)
+        await call_assistant("resp_prev_abc", ["текст"], [])
 
-        _, _, tid = await call_assistant("existing_thread", ["текст"], [])
+    call_kwargs = mock_client.responses.create.call_args.kwargs
+    assert call_kwargs["previous_response_id"] == "resp_prev_abc"
 
-    # create не должен вызываться — тред уже есть
-    mock_client.beta.threads.create.assert_not_called()
-    assert tid == "existing_thread"
+
+@pytest.mark.asyncio
+async def test_no_previous_id_on_first_message():
+    resp = _make_response("completed", output_text="ок")
+    with patch("app.ai.assistant._client") as mock_client:
+        mock_client.responses.create = AsyncMock(return_value=resp)
+        await call_assistant(None, ["текст"], [])
+
+    call_kwargs = mock_client.responses.create.call_args.kwargs
+    assert "previous_response_id" not in call_kwargs
+
+
+@pytest.mark.asyncio
+async def test_image_urls_in_input():
+    resp = _make_response("completed", output_text="вижу")
+    with patch("app.ai.assistant._client") as mock_client:
+        mock_client.responses.create = AsyncMock(return_value=resp)
+        await call_assistant(None, ["текст"], ["https://example.com/img.jpg"])
+
+    call_kwargs = mock_client.responses.create.call_args.kwargs
+    content = call_kwargs["input"]
+    types = [item["type"] for item in content]
+    assert "input_image" in types

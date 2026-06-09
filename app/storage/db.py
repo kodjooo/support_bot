@@ -13,7 +13,7 @@ class UserRecord:
     user_id: str
     first_name: str
     last_name: str
-    thread_id: str | None
+    last_response_id: str | None  # ID последнего ответа Responses API (для цепочки диалога)
     texts: list[str]
     image_ids: list[str]
     last_update: int
@@ -28,13 +28,13 @@ async def init() -> None:
     async with aiosqlite.connect(_db_path) as db:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                user_id         TEXT PRIMARY KEY,
-                first_name      TEXT,
-                last_name       TEXT,
-                thread_id       TEXT,
-                texts_json      TEXT,
-                image_ids_json  TEXT,
-                last_update     INTEGER
+                user_id             TEXT PRIMARY KEY,
+                first_name          TEXT,
+                last_name           TEXT,
+                last_response_id    TEXT,
+                texts_json          TEXT,
+                image_ids_json      TEXT,
+                last_update         INTEGER
             )
         """)
         await db.commit()
@@ -56,7 +56,7 @@ async def get_user(user_id: str) -> UserRecord | None:
         user_id=row["user_id"],
         first_name=row["first_name"] or "",
         last_name=row["last_name"] or "",
-        thread_id=row["thread_id"],
+        last_response_id=row["last_response_id"],
         texts=json.loads(row["texts_json"] or "[]"),
         image_ids=json.loads(row["image_ids_json"] or "[]"),
         last_update=row["last_update"] or 0,
@@ -71,7 +71,7 @@ async def upsert_user(
     image_ids: list[str],
     last_update: int,
 ) -> None:
-    """Создаёт или обновляет запись. thread_id не трогает."""
+    """Создаёт или обновляет запись. last_response_id не трогает."""
     async with aiosqlite.connect(_db_path) as db:
         await db.execute(
             """
@@ -96,18 +96,18 @@ async def upsert_user(
         await db.commit()
 
 
-async def save_thread_id(user_id: str, thread_id: str) -> None:
-    """Сохраняет OpenAI Thread ID для пользователя."""
+async def save_last_response_id(user_id: str, last_response_id: str) -> None:
+    """Сохраняет ID последнего ответа Responses API для продолжения диалога."""
     async with aiosqlite.connect(_db_path) as db:
         await db.execute(
-            "UPDATE users SET thread_id = ? WHERE user_id = ?",
-            (thread_id, user_id),
+            "UPDATE users SET last_response_id = ? WHERE user_id = ?",
+            (last_response_id, user_id),
         )
         await db.commit()
 
 
 async def clear_buffer(user_id: str) -> None:
-    """Очищает буфер текстов и изображений. thread_id сохраняет."""
+    """Очищает буфер текстов и изображений. last_response_id сохраняет."""
     async with aiosqlite.connect(_db_path) as db:
         await db.execute(
             """

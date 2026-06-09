@@ -28,7 +28,7 @@ async def transfer_to_operator(bot: Bot, user_id: str, first_name: str, last_nam
 
 
 async def process_and_reply(bot: Bot, user_id: str) -> None:
-    """Основная логика обработки после дебаунса. Реализована на этапе 8."""
+    """Основная логика обработки после дебаунса."""
     async with get_lock(user_id):
         import time
 
@@ -63,8 +63,8 @@ async def process_and_reply(bot: Bot, user_id: str) -> None:
         typing_task = asyncio.create_task(keep_typing(bot, user_id, stop_event))
 
         try:
-            response_text, needs_operator, new_thread_id = await call_assistant(
-                thread_id=record.thread_id,
+            response_text, needs_operator, new_response_id = await call_assistant(
+                last_response_id=record.last_response_id,
                 texts=record.texts,
                 image_urls=image_urls,
             )
@@ -78,9 +78,9 @@ async def process_and_reply(bot: Bot, user_id: str) -> None:
         stop_event.set()
         await typing_task
 
-        # Сохраняем новый thread_id если он только что создан
-        if new_thread_id and new_thread_id != record.thread_id:
-            await db.save_thread_id(user_id, new_thread_id)
+        # Сохраняем ID последнего ответа для продолжения диалога
+        if new_response_id and new_response_id != record.last_response_id:
+            await db.save_last_response_id(user_id, new_response_id)
 
         if needs_operator:
             await transfer_to_operator(bot, user_id, record.first_name, record.last_name)
