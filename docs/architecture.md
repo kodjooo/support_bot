@@ -73,6 +73,8 @@ Router aiogram. Классифицирует входящие сообщения
 ### bot/processor.py *(этап 8)*
 Оркестрация: asyncio.Lock на user_id → TTL-проверка → URL изображений → keep_typing → OpenAI → очистка → ответ или оператор.
 
+Если во время запроса к OpenAI пользователь отправляет новые сообщения, ответ на устаревший снимок буфера подавляется. При этом буфер не очищается и не обрезается: после новой паузы `DEBOUNCE_DELAY` все накопленные сообщения отправляются в OpenAI одной актуальной пачкой.
+
 ### app/main.py *(этап 9)*
 Инициализация БД, создание Bot и Dispatcher, подключение router, запуск `dp.start_polling(bot)`.
 
@@ -98,7 +100,9 @@ processor.py — asyncio.Lock(user_id)
     │   ├─ requires_action → transfer_to_operator
     │   ├─ completed → ai/cleaner.py → bot.send_message
     │   └─ прочие статусы → transfer_to_operator
-    └─ storage/db.py → clear_buffer()
+    └─ storage/db.py → consume_buffer() после успешной отправки ответа
+
+Если во время OpenAI-запроса пришли новые сообщения, `processor.py` подавляет ответ на старый снимок, оставляет буфер без изменений и перезапускает debounce. Следующий проход отправляет весь накопленный буфер целиком.
 ```
 
 ---

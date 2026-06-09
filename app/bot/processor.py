@@ -129,11 +129,11 @@ async def process_and_reply(bot: Bot, user_id: str) -> None:
 
         if await _has_new_buffer_items(user_id, record.texts, record.image_ids):
             # Пока OpenAI отвечал, пользователь дописал запрос.
-            # Не отправляем частичный ответ, снимаем обработанный снимок
-            # и ждём следующую паузу для цельного ответа по остатку.
-            await db.consume_buffer(user_id, record.texts, record.image_ids)
+            # Не отправляем частичный ответ и не трогаем буфер:
+            # следующая обработка возьмёт старые и новые сообщения одной пачкой.
             logger.info(
-                "Ответ на устаревший снимок буфера подавлен (user_id=%s, taken_texts=%d, taken_images=%d)",
+                "Ответ на устаревший снимок буфера подавлен, буфер сохранён для повторной обработки "
+                "(user_id=%s, taken_texts=%d, taken_images=%d)",
                 user_id,
                 len(record.texts),
                 len(record.image_ids),

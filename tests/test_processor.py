@@ -104,3 +104,27 @@ async def test_saves_new_response_id():
 
     record = await db.get_user("5")
     assert record.last_response_id == "resp_new_999"
+
+
+@pytest.mark.asyncio
+async def test_suppresses_stale_reply_when_new_message_arrives_during_processing():
+    await _seed("6", ["Меня"], [])
+    bot = MagicMock()
+    bot.get_file = AsyncMock()
+    bot.send_chat_action = AsyncMock()
+    bot.send_message = AsyncMock()
+
+    async def add_message_during_processing(*args, **kwargs):
+        await db.upsert_user("6", "Иван", "Петров", ["Меня", "зовут"], [], int(time.time()))
+        return "Ответ на старый фрагмент", False, "resp_stale"
+
+    with patch("app.ai.assistant.call_assistant", new_callable=AsyncMock) as mock_ai:
+        with patch("app.bot.debounce.debounce", new_callable=AsyncMock) as mock_debounce:
+            mock_ai.side_effect = add_message_during_processing
+            await process_and_reply(bot, "6")
+
+    bot.send_message.assert_not_called()
+    mock_debounce.assert_called_once_with("6", bot)
+    record = await db.get_user("6")
+    assert record.texts == ["Меня", "зовут"]
+    assert record.last_response_id is None

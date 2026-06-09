@@ -98,6 +98,6 @@ async def test_image_urls_in_input():
         await call_assistant(None, ["текст"], ["https://example.com/img.jpg"])
 
     call_kwargs = mock_client.responses.create.call_args.kwargs
-    content = call_kwargs["input"]
+    content = call_kwargs["input"][0]["content"]
     types = [item["type"] for item in content]
     assert "input_image" in types
