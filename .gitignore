@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.py[cod]
+*.pytest_cache/
+.pytest_cache/
+data/
+*.db
+secure/
+.DS_Store
+.claude/settings.local.json
