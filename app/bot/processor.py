@@ -45,6 +45,7 @@ async def process_and_reply(bot: Bot, user_id: str) -> None:
         from app.utils.telegram import get_image_url, keep_typing
         from app.ai.assistant import call_assistant
         from app.ai.cleaner import clean_response
+        from app.ai.vector_client import fetch_context
 
         # Проверка количества изображений
         if len(record.image_ids) > settings.max_images:
@@ -58,6 +59,15 @@ async def process_and_reply(bot: Bot, user_id: str) -> None:
             url = await get_image_url(bot, file_id)
             image_urls.append(url)
 
+        # Запрос релевантных чанков из векторной базы знаний
+        user_query = "\n".join(record.texts)
+        context_chunks = await fetch_context(user_query)
+        if context_chunks:
+            context_prefix = "Контекст из базы знаний:\n" + "\n\n".join(context_chunks)
+            texts = [context_prefix] + record.texts
+        else:
+            texts = record.texts
+
         # Индикатор "бот печатает..."
         stop_event = asyncio.Event()
         typing_task = asyncio.create_task(keep_typing(bot, user_id, stop_event))
@@ -65,7 +75,7 @@ async def process_and_reply(bot: Bot, user_id: str) -> None:
         try:
             response_text, needs_operator, new_response_id = await call_assistant(
                 last_response_id=record.last_response_id,
-                texts=record.texts,
+                texts=texts,
                 image_urls=image_urls,
             )
         except Exception:

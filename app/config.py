@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     operator_chat_id: str
     operator_name: str
 
+    # URL сервиса векторного поиска (vector-base-for-bot)
+    # Пример: http://vector-base:8080 (имя сервиса из docker-compose)
+    # Если не задан — бот работает без контекста из базы знаний
+    vector_base_url: str | None = None
+
     # База данных
     database_path: str = "./data/chatbot.db"
 
