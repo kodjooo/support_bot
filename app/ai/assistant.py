@@ -1,6 +1,10 @@
-from openai import AsyncOpenAI
+import logging
+
+from openai import AsyncOpenAI, BadRequestError
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 _client = AsyncOpenAI(api_key=settings.openai_api_key)
 
@@ -10,10 +14,14 @@ OPERATOR_TOOLS = [
         "type": "function",
         "name": "transfer_to_operator",
         "description": (
-            "Вызвать эту функцию, когда вопрос пользователя выходит за рамки "
-            "компетенции ассистента и требует участия живого оператора."
+            "Вызывай эту функцию в следующих случаях:\n"
+            "1. Пользователь явно просит соединить его с живым человеком, оператором или менеджером.\n"
+            "2. Пользователь явно недоволен тем, как ты отвечаешь.\n"
+            "3. Ответа на вопрос нет в базе знаний или информация неоднозначна.\n"
+            "4. Информации недостаточно или ты не уверен в правильности ответа."
         ),
         "parameters": {"type": "object", "properties": {}, "required": []},
+        "strict": False,
     }
 ]
 
@@ -32,15 +40,23 @@ async def call_assistant(
     """
     combined_text = "\n".join(texts) if texts else ""
 
-    # Формируем content: текст + изображения
-    content: list[dict] = [{"type": "input_text", "text": combined_text}]
-    for url in image_urls:
-        content.append({"type": "input_image", "image_url": url})
+    # Формируем input.
+    # Responses API требует обёртки в {"role": "user", "content": [...]} когда есть картинки.
+    # Без картинок — простая строка.
+    if image_urls:
+        content: list[dict] = []
+        if combined_text:
+            content.append({"type": "input_text", "text": combined_text})
+        for url in image_urls:
+            content.append({"type": "input_image", "image_url": url})
+        input_data = [{"role": "user", "content": content}]
+    else:
+        input_data = combined_text
 
     # Параметры запроса
     params: dict = {
         "model": settings.openai_model,
-        "input": content,
+        "input": input_data,
         "tools": OPERATOR_TOOLS,
     }
 
@@ -62,19 +78,40 @@ async def call_assistant(
     if settings.openai_reasoning_effort is not None:
         params["reasoning"] = {"effort": settings.openai_reasoning_effort}
 
-    response = await _client.responses.create(**params)
+    logger.info("[OPENAI] Запрос: model=%s, last_response_id=%s, texts_count=%d, images_count=%d",
+                settings.openai_model, last_response_id, len(texts), len(image_urls))
+    logger.info("[OPENAI] Полный текст запроса: %s", combined_text[:1000])
+
+    try:
+        response = await _client.responses.create(**params)
+    except BadRequestError as e:
+        logger.error("OpenAI 400 Bad Request: %s", e.message)
+        raise
+    except Exception as e:
+        logger.error("OpenAI API ошибка: %s", e)
+        raise
 
     new_last_response_id = response.id
+    logger.info("OpenAI response: id=%s, status=%s, output_items=%d",
+                response.id, response.status, len(response.output))
 
     # Проверяем, вызвал ли ассистент transfer_to_operator
+    # Тип может быть "function_call" или "function_tool_call" в зависимости от версии API
     for item in response.output:
-        if getattr(item, "type", None) == "function_tool_call":
-            if getattr(item, "name", None) == "transfer_to_operator":
+        item_type = getattr(item, "type", None)
+        item_name = getattr(item, "name", None)
+        logger.info("OpenAI output item: type=%s, name=%s", item_type, item_name)
+        if item_type in ("function_call", "function_tool_call"):
+            if item_name == "transfer_to_operator":
+                logger.info("OpenAI вызвал transfer_to_operator — переводим на оператора")
                 return None, True, new_last_response_id
 
     # Получаем текстовый ответ
     if response.status == "completed":
-        return response.output_text, False, new_last_response_id
+        output_text = response.output_text
+        logger.info("[OPENAI] Полный ответ: %s", output_text or "")
+        return output_text, False, new_last_response_id
 
     # Все остальные статусы (failed, incomplete и т.д.)
+    logger.warning("OpenAI response status: %s", response.status)
     return None, True, new_last_response_id

@@ -26,11 +26,14 @@ async def fetch_context(query: str) -> list[str]:
 
     try:
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
+            logger.info("[VECTOR] Запрос поиска: %s", query[:300])
             response = await client.post(url, json={"query": query, "top_k": 3})
             response.raise_for_status()
             data = response.json()
             chunks = data.get("chunks") or []
-            logger.debug("Получено чанков из векторной базы: %s.", len(chunks))
+            logger.info("[VECTOR] Найдено чанков: %d", len(chunks))
+            for i, chunk in enumerate(chunks):
+                logger.info("[VECTOR] Чанк %d: %s", i + 1, chunk[:200])
             return chunks
     except httpx.TimeoutException:
         logger.warning("Таймаут запроса к векторной базе (%s).", url)
