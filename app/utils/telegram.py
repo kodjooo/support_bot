@@ -15,4 +15,7 @@ async def keep_typing(bot: Bot, chat_id: str, stop_event: asyncio.Event) -> None
     """Шлёт действие 'typing' каждые 4 секунды пока не установлен stop_event."""
     while not stop_event.is_set():
         await bot.send_chat_action(chat_id=chat_id, action="typing")
-        await asyncio.sleep(4)
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=4)
+        except asyncio.TimeoutError:
+            pass

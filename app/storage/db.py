@@ -118,3 +118,43 @@ async def clear_buffer(user_id: str) -> None:
             (user_id,),
         )
         await db.commit()
+
+
+async def consume_buffer(
+    user_id: str,
+    taken_texts: list[str],
+    taken_image_ids: list[str],
+) -> None:
+    """Удаляет из буфера только те элементы, которые были взяты на обработку.
+    Новые сообщения, пришедшие во время обработки, остаются в буфере."""
+    async with aiosqlite.connect(_db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT texts_json, image_ids_json FROM users WHERE user_id = ?", (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return
+
+        current_texts: list[str] = json.loads(row["texts_json"] or "[]")
+        current_images: list[str] = json.loads(row["image_ids_json"] or "[]")
+
+        # Удаляем только обработанные элементы (с начала списка)
+        remaining_texts = current_texts[len(taken_texts):]
+        remaining_images = current_images[len(taken_image_ids):]
+
+        await db.execute(
+            """
+            UPDATE users
+            SET texts_json = ?, image_ids_json = ?, last_update = CASE WHEN ? > 0 OR ? > 0 THEN last_update ELSE 0 END
+            WHERE user_id = ?
+            """,
+            (
+                json.dumps(remaining_texts, ensure_ascii=False),
+                json.dumps(remaining_images, ensure_ascii=False),
+                len(remaining_texts),
+                len(remaining_images),
+                user_id,
+            ),
+        )
+        await db.commit()

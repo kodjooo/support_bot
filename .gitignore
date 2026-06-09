@@ -7,4 +7,10 @@ data/
 *.db
 secure/
 .DS_Store
+
+# Claude Code IDE files — не нужны в репозитории
+.claude/settings.json
 .claude/settings.local.json
+.claude/memory/
+.claude/todos/
+# CLAUDE.md оставляем — это документация для разработчиков

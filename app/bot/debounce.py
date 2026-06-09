@@ -15,7 +15,9 @@ async def debounce(user_id: str, bot: Bot) -> None:
 
     async def _run() -> None:
         await asyncio.sleep(settings.debounce_delay)
-        # Импорт здесь — избегаем циклического импорта
+        # Убираем себя из словаря — мы вышли из фазы ожидания.
+        # Теперь новые сообщения создадут свой таймер, но нас не отменят.
+        _timers.pop(user_id, None)
         from app.bot.processor import process_and_reply
         await process_and_reply(bot, user_id)
 

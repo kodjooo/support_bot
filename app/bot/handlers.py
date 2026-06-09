@@ -70,6 +70,6 @@ async def handle_message(message: Message) -> None:
         await _save_to_buffer(message, new_text=message.text)
         return
 
-    # --- Прочее (видео, аудио, стикеры и т.д.) ---
-    await message.answer("Человек с большей вероятностью вам поможет. Зову оператора.")
+    # --- Прочее (видео, аудио, стикеры, Excel, PDF и т.д.) ---
+    await message.answer("Перевожу ваш запрос на оператора. Он подключится в ближайшее время.")
     await _notify_operator(message)

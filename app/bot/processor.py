@@ -79,7 +79,12 @@ async def process_and_reply(bot: Bot, user_id: str) -> None:
         logger.info("[USER] user_id=%s сообщение: %s", user_id, user_query[:500])
         context_chunks = await fetch_context(user_query)
         if context_chunks:
-            context_prefix = "Контекст из базы знаний:\n" + "\n\n".join(context_chunks)
+            context_prefix = (
+                "Контекст из базы знаний. Отвечай только по этим фрагментам. "
+                "Не добавляй варианты, шаги или места интерфейса, которых нет в контексте. "
+                "Если контекст не подтверждает ответ, вызови transfer_to_operator.\n"
+                + "\n\n".join(context_chunks)
+            )
             texts = [context_prefix] + record.texts
         else:
             texts = record.texts
