@@ -52,6 +52,14 @@ async def call_assistant(
     if last_response_id is not None:
         params["previous_response_id"] = last_response_id
 
+    # Температура — для gpt-серии (0.0–2.0); модели o-серии её не поддерживают
+    if settings.openai_temperature is not None:
+        params["temperature"] = settings.openai_temperature
+
+    # Уровень рассуждения — только для моделей o-серии (o3, o4-mini и др.)
+    if settings.openai_reasoning_effort is not None:
+        params["reasoning"] = {"effort": settings.openai_reasoning_effort}
+
     response = await _client.responses.create(**params)
 
     new_last_response_id = response.id
