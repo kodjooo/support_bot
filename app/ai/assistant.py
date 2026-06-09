@@ -45,8 +45,10 @@ async def call_assistant(
     }
 
     # Системный промпт — только при первом обращении (нет previous_response_id)
-    if last_response_id is None and settings.openai_instructions:
-        params["instructions"] = settings.openai_instructions
+    if last_response_id is None:
+        instructions = settings.get_instructions()
+        if instructions:
+            params["instructions"] = instructions
 
     # Продолжение существующего диалога
     if last_response_id is not None:

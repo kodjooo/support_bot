@@ -10,9 +10,17 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str
     openai_model: str = "gpt-4o"
-    openai_instructions: str = ""        # системный промпт ассистента
+    openai_system_prompt_file: str = "system_prompt.txt"  # путь к файлу с системным промптом
     openai_temperature: float | None = None  # None = использовать дефолт модели (0.0–2.0); не поддерживается моделями o-серии
     openai_reasoning_effort: str | None = None  # low / medium / high; только для моделей o-серии (o3, o4-mini и др.)
+
+    def get_instructions(self) -> str:
+        """Читает системный промпт из файла. Возвращает пустую строку если файл не найден."""
+        try:
+            with open(self.openai_system_prompt_file, encoding="utf-8") as f:
+                return f.read().strip()
+        except FileNotFoundError:
+            return ""
 
     # Оператор
     operator_chat_id: str
